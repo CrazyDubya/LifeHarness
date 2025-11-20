@@ -1,20 +1,20 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, DateTime, ForeignKey, ARRAY, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, String, Integer, DateTime, ForeignKey, Text
 from sqlalchemy.orm import relationship
 from app.core.database import Base
+from app.core.db_types import UUIDType, ArrayType
 
 
 class Thread(Base):
     __tablename__ = "threads"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    id = Column(UUIDType(), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUIDType(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     title = Column(String, nullable=False)
     root_prompt = Column(Text, nullable=False)
-    time_focus = Column(ARRAY(String), nullable=True, default=list)
-    topic_focus = Column(ARRAY(String), nullable=True, default=list)
+    time_focus = Column(ArrayType(String), nullable=True, default=list)
+    topic_focus = Column(ArrayType(String), nullable=True, default=list)
 
     questions_asked = Column(Integer, nullable=False, default=0)
     questions_since_last_freeform = Column(Integer, nullable=False, default=0)
@@ -32,8 +32,8 @@ class Thread(Base):
 class ThreadFreeform(Base):
     __tablename__ = "thread_freeforms"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    thread_id = Column(UUID(as_uuid=True), ForeignKey("threads.id", ondelete="CASCADE"), nullable=False)
+    id = Column(UUIDType(), primary_key=True, default=uuid.uuid4)
+    thread_id = Column(UUIDType(), ForeignKey("threads.id", ondelete="CASCADE"), nullable=False)
     index_in_thread = Column(Integer, nullable=False)
     text = Column(Text, nullable=False)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)

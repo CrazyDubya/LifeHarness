@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.core.database import get_db
+from app.core.deps import get_current_user
 from app.core.security import verify_password, get_password_hash, create_access_token
 from app.models.user import User, UserProfile
 from app.schemas.user import UserCreate, UserLogin, Token, UserOut
@@ -60,6 +61,6 @@ def login(user_data: UserLogin, db: Session = Depends(get_db)):
 
 
 @router.get("/me", response_model=UserOut)
-def get_current_user_info(user: User = Depends(lambda: None)):  # Will be replaced by actual dep
+def get_current_user_info(user: User = Depends(get_current_user)):
     """Get current user info"""
     return user
