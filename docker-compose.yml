@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: lifeharness
+      POSTGRES_PASSWORD: lifeharness_password
+      POSTGRES_DB: lifeharness
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lifeharness"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://lifeharness:lifeharness_password@postgres:5432/lifeharness
+      SECRET_KEY: ${SECRET_KEY:-change-this-in-production}
+      VULTR_API_KEY: ${VULTR_API_KEY}
+      VULTR_API_BASE_URL: ${VULTR_API_BASE_URL:-https://api.vultrinference.com/v1}
+      VULTR_MODEL: ${VULTR_MODEL:-llama2-13b-chat-Q5_K_M}
+      CORS_ORIGINS: http://localhost:5173,http://localhost:3000
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      VITE_API_URL: http://localhost:8000/api
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: npm run dev -- --host
+
+volumes:
+  postgres_data:
