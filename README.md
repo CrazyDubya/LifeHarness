@@ -137,6 +137,14 @@ DATABASE_URL=sqlite:///./lifeharness.db
 DATABASE_URL=postgresql://user:password@localhost:5432/lifeharness
 ```
 
+## Documentation
+
+Comprehensive guides are available to help you get started and use the system effectively:
+
+- **[Onboarding Guide](ONBOARDING_GUIDE.md)** - Complete walkthrough for new users, from installation to generating your first autobiography
+- **[Testing Guide](TESTING_GUIDE.md)** - Instructions for testing the system, including manual tests, API testing, and bug reporting
+- **[Screen Flows](SCREEN_FLOWS.md)** - Detailed UI specifications and screen descriptions for each page
+
 ## Usage Guide
 
 ### 1. Registration & Onboarding
