@@ -1,6 +1,5 @@
 import axios from 'axios';
 import type {
-  User,
   Profile,
   Thread,
   StepResponse,

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { threadsApi, entriesApi, profileApi } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
-import type { Thread, CoverageCell, Profile } from '../types';
+import type { Thread, CoverageCell } from '../types';
 import CoverageHeatmap from '../components/CoverageHeatmap';
 
 export default function Dashboard() {
@@ -10,7 +10,6 @@ export default function Dashboard() {
   const { logout } = useAuth();
   const [threads, setThreads] = useState<Thread[]>([]);
   const [coverage, setCoverage] = useState<CoverageCell[]>([]);
-  const [profile, setProfile] = useState<Profile | null>(null);
   const [showNewThread, setShowNewThread] = useState(false);
   const [newThread, setNewThread] = useState({ title: '', root_prompt: '' });
 
@@ -20,14 +19,13 @@ export default function Dashboard() {
 
   const loadData = async () => {
     try {
-      const [threadsData, coverageData, profileData] = await Promise.all([
+      const [threadsData, coverageData] = await Promise.all([
         threadsApi.list(),
         entriesApi.getCoverage(),
         profileApi.get(),
       ]);
       setThreads(threadsData);
       setCoverage(coverageData);
-      setProfile(profileData);
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
     }
