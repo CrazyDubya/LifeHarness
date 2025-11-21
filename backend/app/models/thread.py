@@ -13,6 +13,7 @@ class Thread(Base):
     user_id = Column(UUIDType(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     title = Column(String, nullable=False)
     root_prompt = Column(Text, nullable=False)
+    persona = Column(String, nullable=False, default="warm_companion")
     time_focus = Column(ArrayType(String), nullable=True, default=list)
     topic_focus = Column(ArrayType(String), nullable=True, default=list)
 

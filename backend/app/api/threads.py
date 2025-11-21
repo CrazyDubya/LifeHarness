@@ -15,6 +15,7 @@ from app.services.question_engine import (
     create_freeform_question,
     generate_next_question
 )
+from app.services.agent_personalities import DEFAULT_PERSONA_KEY
 from app.services.life_entry_service import create_life_entry_from_freeform
 
 router = APIRouter()
@@ -31,6 +32,7 @@ def create_thread(
         user_id=user.id,
         title=thread_data.title,
         root_prompt=thread_data.root_prompt,
+        persona=thread_data.persona or DEFAULT_PERSONA_KEY,
         time_focus=thread_data.time_focus or [],
         topic_focus=thread_data.topic_focus or [],
     )

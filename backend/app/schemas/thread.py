@@ -7,6 +7,7 @@ from uuid import UUID
 class ThreadCreate(BaseModel):
     title: str
     root_prompt: str
+    persona: Optional[str] = None
     time_focus: Optional[List[str]] = None
     topic_focus: Optional[List[str]] = None
 
@@ -16,6 +17,7 @@ class ThreadOut(BaseModel):
     user_id: UUID
     title: str
     root_prompt: str
+    persona: str
     time_focus: Optional[List[str]]
     topic_focus: Optional[List[str]]
     questions_asked: int
