@@ -9,6 +9,55 @@ from app.services.llm_orchestrator import llm_orchestrator
 from app.services.coverage_service import get_coverage_slice
 
 
+def select_next_target(
+    coverage_slice: Dict[str, Dict[str, int]],
+    recent_questions: List[Question]
+) -> Optional[Dict[str, Any]]:
+    """Pick the next time/topic slice to focus on.
+
+    Prefers the lowest-scored coverage slice that hasn't been asked about in the
+    most recent questions. If all low slices were recently asked, returns the
+    lowest overall.
+    """
+
+    candidates: List[tuple[str, str, int]] = []
+    for time_bucket, topics in coverage_slice.items():
+        for topic_bucket, score in topics.items():
+            candidates.append((time_bucket, topic_bucket, score))
+
+    if not candidates:
+        return None
+
+    # Track recently asked time/topic pairs
+    recent_pairs = set()
+    for question in recent_questions:
+        times = question.time_focus or []
+        topics = question.topic_focus or []
+        if not times or not topics:
+            continue
+        for time_bucket in times:
+            for topic_bucket in topics:
+                recent_pairs.add((time_bucket, topic_bucket))
+
+    candidates.sort(key=lambda c: (c[2], c[0], c[1]))
+
+    for time_bucket, topic_bucket, score in candidates:
+        if (time_bucket, topic_bucket) not in recent_pairs:
+            return {
+                "time_bucket": time_bucket,
+                "topic_bucket": topic_bucket,
+                "score": score
+            }
+
+    # Fall back to the lowest-scored slice even if recently asked
+    time_bucket, topic_bucket, score = candidates[0]
+    return {
+        "time_bucket": time_bucket,
+        "topic_bucket": topic_bucket,
+        "score": score
+    }
+
+
 def should_inject_freeform(thread: Thread) -> bool:
     """Determine if we should inject a freeform prompt"""
     n = thread.questions_since_last_freeform
@@ -133,8 +182,9 @@ async def generate_next_question(
     # Get allowed buckets
     allowed_time, allowed_topics = get_allowed_buckets(profile, thread)
 
-    # Get coverage
+    # Get coverage and choose next target slice
     coverage_slice = get_coverage_slice(db, profile.user_id, allowed_time, allowed_topics)
+    target_focus = select_next_target(coverage_slice, recent_questions)
 
     # Build profile summary
     current_year = datetime.now().year
@@ -155,13 +205,39 @@ async def generate_next_question(
         recent_qa=recent_qa,
         coverage_slice=coverage_slice,
         allowed_time_buckets=allowed_time,
-        allowed_topic_buckets=allowed_topics
+        allowed_topic_buckets=allowed_topics,
+        target_focus=target_focus
     )
 
     if not result or "question" not in result:
         return None
 
     q_data = result["question"]
+
+    # Persist the targeted focus even if the LLM omits it
+    raw_time_focus = q_data.get("time_focus")
+    raw_topic_focus = q_data.get("topic_focus")
+
+    time_focus = (
+        list(raw_time_focus)
+        if isinstance(raw_time_focus, list)
+        else [raw_time_focus]
+        if isinstance(raw_time_focus, str)
+        else []
+    )
+    topic_focus = (
+        list(raw_topic_focus)
+        if isinstance(raw_topic_focus, list)
+        else [raw_topic_focus]
+        if isinstance(raw_topic_focus, str)
+        else []
+    )
+
+    if target_focus:
+        if target_focus["time_bucket"] not in time_focus:
+            time_focus = time_focus + [target_focus["time_bucket"]]
+        if target_focus["topic_bucket"] not in topic_focus:
+            topic_focus = topic_focus + [target_focus["topic_bucket"]]
 
     # Create question
     question = Question(
@@ -170,8 +246,8 @@ async def generate_next_question(
         type=q_data.get("type", "multiple_choice"),
         text=q_data["text"],
         options=q_data.get("options"),
-        time_focus=q_data.get("time_focus", []),
-        topic_focus=q_data.get("topic_focus", []),
+        time_focus=time_focus,
+        topic_focus=topic_focus,
     )
 
     db.add(question)

@@ -52,7 +52,8 @@ class LLMOrchestrator:
         recent_qa: List[Dict[str, str]],
         coverage_slice: Dict[str, Dict[str, int]],
         allowed_time_buckets: List[str],
-        allowed_topic_buckets: List[str]
+        allowed_topic_buckets: List[str],
+        target_focus: Optional[Dict[str, Any]] = None
     ) -> Optional[Dict[str, Any]]:
         """Generate next question for the thread"""
 
@@ -66,6 +67,8 @@ Constraints:
 - Prefer concrete, specific questions tied to periods, people, or places.
 - Default to multiple-choice with an "Other (I'll explain)" option when possible.
 - Focus on areas with low coverage scores to ensure comprehensive life documentation.
+- If a target_focus is provided, prioritize that time/topic slice for the next question and set the time_focus/topic_focus accordingly.
+- Keep time_focus values within the allowed_time_buckets, and topic_focus values within allowed_topic_buckets.
 
 Return your response as valid JSON with this structure:
 {
@@ -93,7 +96,8 @@ For short_answer questions, omit the "options" field."""
             "recent_qa": recent_qa,
             "coverage_slice": coverage_slice,
             "allowed_time_buckets": allowed_time_buckets,
-            "allowed_topic_buckets": allowed_topic_buckets
+            "allowed_topic_buckets": allowed_topic_buckets,
+            "target_focus": target_focus
         })
 
         messages = [
