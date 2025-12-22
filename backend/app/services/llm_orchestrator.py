@@ -51,6 +51,7 @@ class LLMOrchestrator:
         thread_freeforms: List[Dict[str, Any]],
         recent_qa: List[Dict[str, str]],
         coverage_slice: Dict[str, Dict[str, int]],
+        context_digest: Dict[str, Any],
         allowed_time_buckets: List[str],
         allowed_topic_buckets: List[str]
     ) -> Optional[Dict[str, Any]]:
@@ -66,6 +67,11 @@ Constraints:
 - Prefer concrete, specific questions tied to periods, people, or places.
 - Default to multiple-choice with an "Other (I'll explain)" option when possible.
 - Focus on areas with low coverage scores to ensure comprehensive life documentation.
+- Use the provided time/topic summaries from past entries and freeforms to maintain continuity and avoid asking about already-covered specifics.
+
+Additional context provided in user content:
+- context_digest.time_topic_summaries: small groups of distilled life entries keyed by time_bucket and topic with recent highlights.
+- context_digest.recent_freeforms: the latest freeform texts with inferred/assumed time/topic focus.
 
 Return your response as valid JSON with this structure:
 {
@@ -92,6 +98,7 @@ For short_answer questions, omit the "options" field."""
             "thread_freeforms": thread_freeforms,
             "recent_qa": recent_qa,
             "coverage_slice": coverage_slice,
+            "context_digest": context_digest,
             "allowed_time_buckets": allowed_time_buckets,
             "allowed_topic_buckets": allowed_topic_buckets
         })
