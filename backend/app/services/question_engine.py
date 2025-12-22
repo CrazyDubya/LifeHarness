@@ -8,6 +8,7 @@ from app.models.life_entry import LifeEntry
 from app.models.user import UserProfile
 from app.services.llm_orchestrator import llm_orchestrator
 from app.services.coverage_service import get_coverage_slice
+from app.services.agent_personalities import get_persona, DEFAULT_PERSONA_KEY
 
 
 def should_inject_freeform(thread: Thread) -> bool:
@@ -209,6 +210,9 @@ async def generate_next_question(
     # Get coverage
     coverage_slice = get_coverage_slice(db, profile.user_id, allowed_time, allowed_topics)
 
+    # Persona metadata
+    persona = get_persona(thread.persona or DEFAULT_PERSONA_KEY)
+
     # Build profile summary
     current_year = datetime.now().year
     user_age = current_year - profile.year_of_birth if profile.year_of_birth else None
@@ -231,7 +235,8 @@ async def generate_next_question(
         coverage_slice=coverage_slice,
         context_digest=context_digest,
         allowed_time_buckets=allowed_time,
-        allowed_topic_buckets=allowed_topics
+        allowed_topic_buckets=allowed_topics,
+        persona=persona,
     )
 
     if not result or "question" not in result:

@@ -53,11 +53,17 @@ class LLMOrchestrator:
         coverage_slice: Dict[str, Dict[str, int]],
         context_digest: Dict[str, Any],
         allowed_time_buckets: List[str],
-        allowed_topic_buckets: List[str]
+        allowed_topic_buckets: List[str],
+        persona: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
         """Generate next question for the thread"""
 
-        system_prompt = """You are an ongoing autobiographical interviewer.
+        system_prompt = f"""You are an ongoing autobiographical interviewer embodying the {persona['name']} persona.
+Speak with this voice: {persona['voice']}.
+Use this probing style: {persona['probing_style']}.
+Favor these topic angles: {', '.join(persona.get('preferred_topic_angles', []))}.
+Favor these time angles: {', '.join(persona.get('preferred_time_angles', []))}.
+
 Your job is to propose exactly one next question for this thread.
 
 Constraints:
@@ -100,7 +106,8 @@ For short_answer questions, omit the "options" field."""
             "coverage_slice": coverage_slice,
             "context_digest": context_digest,
             "allowed_time_buckets": allowed_time_buckets,
-            "allowed_topic_buckets": allowed_topic_buckets
+            "allowed_topic_buckets": allowed_topic_buckets,
+            "persona": persona
         })
 
         messages = [
