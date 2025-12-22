@@ -4,9 +4,11 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from app.models.thread import Thread, ThreadFreeform
 from app.models.question import Question, Answer
+from app.models.life_entry import LifeEntry
 from app.models.user import UserProfile
 from app.services.llm_orchestrator import llm_orchestrator
 from app.services.coverage_service import get_coverage_slice
+from app.services.agent_personalities import get_persona, DEFAULT_PERSONA_KEY
 
 
 def select_next_target(
@@ -114,6 +116,78 @@ def get_allowed_buckets(profile: UserProfile, thread: Thread) -> tuple[List[str]
     return allowed_time, allowed_topics
 
 
+def build_context_digest(
+    db: Session,
+    thread: Thread,
+    allowed_time: List[str],
+    allowed_topics: List[str]
+) -> Dict[str, Any]:
+    """Summarize recent life entries and freeforms to maintain continuity"""
+
+    digest: Dict[str, Any] = {"time_topic_summaries": [], "recent_freeforms": []}
+
+    # Recent life entries grouped by time/topic
+    recent_entries = (
+        db.query(LifeEntry)
+        .filter(LifeEntry.user_id == thread.user_id)
+        .order_by(LifeEntry.created_at.desc())
+        .limit(30)
+        .all()
+    )
+
+    grouped: Dict[str, Dict[str, List[Dict[str, Any]]]] = {}
+
+    for entry in recent_entries:
+        if allowed_time and entry.time_bucket not in allowed_time:
+            continue
+
+        topics = entry.topic_buckets or ["general"]
+        for topic in topics:
+            if allowed_topics and topic not in allowed_topics:
+                continue
+
+            grouped.setdefault(entry.time_bucket, {}).setdefault(topic, []).append(
+                {
+                    "headline": entry.headline,
+                    "timeframe": entry.timeframe_label,
+                    "summary": entry.distilled,
+                    "tone": entry.emotional_tone,
+                    "tags": entry.tags,
+                }
+            )
+
+    for time_bucket, topic_map in grouped.items():
+        for topic, items in topic_map.items():
+            digest["time_topic_summaries"].append(
+                {
+                    "time_bucket": time_bucket,
+                    "topic": topic,
+                    "highlights": items[:3],
+                }
+            )
+
+    # Recent freeforms as contextual notes
+    freeforms = (
+        db.query(ThreadFreeform)
+        .filter(ThreadFreeform.thread_id == thread.id)
+        .order_by(ThreadFreeform.index_in_thread.desc())
+        .limit(5)
+        .all()
+    )
+
+    for freeform in reversed(freeforms):
+        digest["recent_freeforms"].append(
+            {
+                "index": freeform.index_in_thread,
+                "text": freeform.text[:400],
+                "assumed_time": (thread.time_focus or ["unspecified"]),
+                "assumed_topics": (thread.topic_focus or ["open"]),
+            }
+        )
+
+    return digest
+
+
 def create_freeform_question(
     db: Session,
     thread: Thread,
@@ -186,6 +260,9 @@ async def generate_next_question(
     coverage_slice = get_coverage_slice(db, profile.user_id, allowed_time, allowed_topics)
     target_focus = select_next_target(coverage_slice, recent_questions)
 
+    # Persona metadata
+    persona = get_persona(thread.persona or DEFAULT_PERSONA_KEY)
+
     # Build profile summary
     current_year = datetime.now().year
     user_age = current_year - profile.year_of_birth if profile.year_of_birth else None
@@ -197,6 +274,8 @@ async def generate_next_question(
         "intensity": profile.intensity or "balanced"
     }
 
+    context_digest = build_context_digest(db, thread, allowed_time, allowed_topics)
+
     # Call LLM
     result = await llm_orchestrator.generate_question(
         thread_root=f"{thread.title}: {thread.root_prompt}",
@@ -204,8 +283,10 @@ async def generate_next_question(
         thread_freeforms=thread_freeforms,
         recent_qa=recent_qa,
         coverage_slice=coverage_slice,
+        context_digest=context_digest,
         allowed_time_buckets=allowed_time,
         allowed_topic_buckets=allowed_topics,
+        persona=persona,
         target_focus=target_focus
     )
 
