@@ -51,13 +51,20 @@ class LLMOrchestrator:
         thread_freeforms: List[Dict[str, Any]],
         recent_qa: List[Dict[str, str]],
         coverage_slice: Dict[str, Dict[str, int]],
+        context_digest: Dict[str, Any],
         allowed_time_buckets: List[str],
         allowed_topic_buckets: List[str],
+        persona: Dict[str, Any],
         target_focus: Optional[Dict[str, Any]] = None
     ) -> Optional[Dict[str, Any]]:
         """Generate next question for the thread"""
 
-        system_prompt = """You are an ongoing autobiographical interviewer.
+        system_prompt = f"""You are an ongoing autobiographical interviewer embodying the {persona['name']} persona.
+Speak with this voice: {persona['voice']}.
+Use this probing style: {persona['probing_style']}.
+Favor these topic angles: {', '.join(persona.get('preferred_topic_angles', []))}.
+Favor these time angles: {', '.join(persona.get('preferred_time_angles', []))}.
+
 Your job is to propose exactly one next question for this thread.
 
 Constraints:
@@ -67,8 +74,14 @@ Constraints:
 - Prefer concrete, specific questions tied to periods, people, or places.
 - Default to multiple-choice with an "Other (I'll explain)" option when possible.
 - Focus on areas with low coverage scores to ensure comprehensive life documentation.
+- Use the provided time/topic summaries from past entries and freeforms to maintain continuity and avoid asking about already-covered specifics.
 - If a target_focus is provided, prioritize that time/topic slice for the next question and set the time_focus/topic_focus accordingly.
 - Keep time_focus values within the allowed_time_buckets, and topic_focus values within allowed_topic_buckets.
+
+Additional context provided in user content:
+- context_digest.time_topic_summaries: small groups of distilled life entries keyed by time_bucket and topic with recent highlights.
+- context_digest.recent_freeforms: the latest freeform texts with inferred/assumed time/topic focus.
+- target_focus: the recommended time/topic slice to prioritize (if provided).
 
 Return your response as valid JSON with this structure:
 {
@@ -95,8 +108,10 @@ For short_answer questions, omit the "options" field."""
             "thread_freeforms": thread_freeforms,
             "recent_qa": recent_qa,
             "coverage_slice": coverage_slice,
+            "context_digest": context_digest,
             "allowed_time_buckets": allowed_time_buckets,
             "allowed_topic_buckets": allowed_topic_buckets,
+            "persona": persona,
             "target_focus": target_focus
         })
 
