@@ -190,18 +190,18 @@ Test-to-Code Ratio:       🔴 0.03:1       (Target: 0.5:1)
 ```
 
 **Recommendation**: Implement comprehensive testing strategy:
-- Add pytest tests for all backend services
-- Add Jest/Vitest tests for React components
+- Install pytest and add configuration for backend tests
+- Install Jest or Vitest for React component testing
 - Add integration tests for API endpoints
-- Add E2E tests for critical user flows
+- Add E2E tests with Playwright or Cypress for critical user flows
 
 #### 2. Database Migration Management
 **Impact**: 🟡 HIGH  
 **Current State**: Alembic installed but no migrations directory
 
 **Recommendation**: 
-- Initialize Alembic migrations: `alembic init alembic`
-- Create initial migration: `alembic revision --autogenerate`
+- Initialize Alembic migration directory: `alembic init alembic`
+- Create initial migration from current models: `alembic revision --autogenerate -m "Initial migration"`
 - Document migration workflow in README
 
 #### 3. Environment Configuration Validation
@@ -320,8 +320,8 @@ frontend/src/
 └──────────────────────────────────────────────────┘
 
 Test Framework Setup:
-Backend:  ✅ pytest installed (requirements.txt)
-Frontend: ⚠️  No test framework configured
+Backend:  ⚠️  Alembic installed but pytest not in requirements.txt
+Frontend: ⚠️  No test framework (Jest/Vitest) configured
 
 Estimated Test Gap: ~800 lines of test code needed
 ```
@@ -533,8 +533,8 @@ Debt Ratio: LOW (32% is manageable for an early-stage project)
 ┌─────┬──────────────────────────────────────┬──────────┬──────────┐
 │ #   │ Action                               │ Effort   │ Impact   │
 ├─────┼──────────────────────────────────────┼──────────┼──────────┤
-│ 1   │ Initialize Alembic migrations        │ 2 hours  │ Critical │
-│ 2   │ Add pytest configuration             │ 1 hour   │ Critical │
+│ 1   │ Initialize Alembic migration dir     │ 2 hours  │ Critical │
+│ 2   │ Install & configure pytest           │ 1 hour   │ Critical │
 │ 3   │ Add 5 critical unit tests            │ 8 hours  │ High     │
 │ 4   │ Document API with OpenAPI examples   │ 3 hours  │ Medium   │
 │ 5   │ Add structured logging               │ 4 hours  │ Medium   │
@@ -593,7 +593,7 @@ Month 3: Excellence (Target: 70% coverage)
 - [ ] Rate limiting (missing)
 - [ ] Security headers (missing)
 
-### Testing 🔴 (1/10 Complete)
+### Testing 🔴 (10% Complete)
 - [ ] Unit tests (0%)
 - [ ] Integration tests (0%)
 - [ ] Component tests (0%)
@@ -603,7 +603,7 @@ Month 3: Excellence (Target: 70% coverage)
 - [ ] Load tests (0%)
 - [x] Manual testing guide (present)
 - [ ] CI/CD pipeline (missing)
-- [ ] Code coverage (missing)
+- [ ] Code coverage tooling (missing)
 
 ### Deployment ✅ (7/10 Complete)
 - [x] Docker containerization
