@@ -20,11 +20,16 @@ def get_performance_metrics() -> Dict:
     - Average response time
     - Number of slow requests
     - Request rate
+    
+    Note: In some deployment configurations, metrics may not be available
+    through this endpoint. Use performance headers (X-Process-Time) on 
+    individual requests for request-level monitoring.
     """
     if performance_middleware:
         return performance_middleware.get_metrics()
+    
+    # Return default values if middleware reference not available
     return {
-        "error": "Performance monitoring not initialized",
         "total_requests": 0,
         "total_time": 0.0,
         "average_time": 0.0,
