@@ -1,6 +1,6 @@
 """Unit tests for authentication endpoints."""
 import pytest
-from app.core.security import verify_password
+from app.core.security import verify_password, get_password_hash
 
 
 def test_register_user(client):
@@ -73,8 +73,6 @@ def test_login_nonexistent_user(client):
 
 def test_password_hashing():
     """Test password hashing and verification."""
-    from app.core.security import get_password_hash
-    
     password = "mysecretpassword"
     hashed = get_password_hash(password)
     

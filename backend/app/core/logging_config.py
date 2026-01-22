@@ -59,9 +59,3 @@ def setup_logging():
     logging.info(f"Environment: {settings.ENVIRONMENT}")
     
     return root_logger
-
-
-# Convenience function to get logger for a module
-def get_logger(name: str):
-    """Get a logger for a specific module."""
-    return logging.getLogger(name)
