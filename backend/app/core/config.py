@@ -1,6 +1,6 @@
 from pydantic_settings import BaseSettings
 from pydantic import model_validator
-from typing import List, Union, Any
+from typing import List, Union, Any, Optional
 
 
 class Settings(BaseSettings):
@@ -22,6 +22,9 @@ class Settings(BaseSettings):
 
     # Environment
     ENVIRONMENT: str = "development"
+    
+    # Sentry (optional - for error tracking)
+    SENTRY_DSN: Optional[str] = None
 
     @model_validator(mode='before')
     @classmethod
