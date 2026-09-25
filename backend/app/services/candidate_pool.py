@@ -6,6 +6,7 @@ a real Question. The pool is condensed when it grows past CANDIDATE_POOL_CAP
 (default 25): near-duplicates merge, then lowest-probability leftovers archive.
 """
 from datetime import datetime
+import re
 from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
 from app.core.config import settings
@@ -29,26 +30,37 @@ def get_pooled(db: Session, thread_id) -> List[QuestionCandidate]:
     )
 
 
+def _normalize_text(text: Optional[str]) -> str:
+    """Lowercase, strip punctuation, collapse whitespace for dupe comparison."""
+    text = (text or "").lower()
+    text = re.sub(r"[^a-z0-9\s]", "", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def _dedupe_key(c: QuestionCandidate) -> tuple:
+    # Same move + same time/topic tags + near-identical text. Distinct questions
+    # that merely share a coverage cell must NOT collapse into each other.
     return (
         c.move,
         tuple(sorted(c.time_focus or [])),
         tuple(sorted(c.topic_focus or [])),
+        _normalize_text(c.text),
     )
 
 
 def condense_pool(db: Session, thread_id, cap: Optional[int] = None) -> int:
     """Shrink the pool to `cap` entries. Returns number archived.
 
-    Near-duplicate removal always runs (same move + time/topic tags keep only
-    the highest-probability one); the cap is enforced only when the pool is
-    over it. Transparent and deterministic — no LLM call.
+    Near-duplicate removal always runs (same move + time/topic tags +
+    near-identical text keep only the highest-probability one); the cap is
+    enforced only when the pool is over it. Transparent and deterministic —
+    no LLM call.
     """
     cap = cap or settings.CANDIDATE_POOL_CAP
     pooled = get_pooled(db, thread_id)
     archived = 0
 
-    # 1. Drop near-duplicates: same move + same time/topic tags.
+    # 1. Drop near-duplicates: same move + same time/topic tags + same text.
     seen: Dict[tuple, QuestionCandidate] = {}
     for c in pooled:
         key = _dedupe_key(c)

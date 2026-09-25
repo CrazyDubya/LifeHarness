@@ -43,10 +43,12 @@ def test_store_and_get_pooled(db_session, thread):
     assert all(c.status == "pooled" for c in pooled)
 
 
-def test_condense_dedupes_same_tags(db_session, thread):
-    # Same move + time + topic twice: keep higher-probability one
+def test_condense_dedupes_same_tags_and_text(db_session, thread):
+    # Same move + time + topic + near-identical text: keep higher-probability one
     c1, c2 = candidate_pool.store_candidates(
-        db_session, thread.id, [_cand(text="Q1"), _cand(text="Q2")]
+        db_session, thread.id,
+        [_cand(text="What did you do after school?"),
+         _cand(text="  what did you DO after school?! ")],
     )
     c1.jev_probability = 0.7
     c2.jev_probability = 0.2
@@ -58,6 +60,18 @@ def test_condense_dedupes_same_tags(db_session, thread):
     db_session.refresh(c2)
     assert c1.status == "pooled"
     assert c2.status == "archived"
+
+
+def test_condense_keeps_distinct_questions_in_same_cell(db_session, thread):
+    # Same move + time + topic but genuinely different questions: both survive
+    candidate_pool.store_candidates(
+        db_session, thread.id,
+        [_cand(text="What did you do after school with friends?"),
+         _cand(text="Who was the toughest kid on your block?")],
+    )
+    archived = candidate_pool.condense_pool(db_session, thread.id, cap=25)
+    assert archived == 0
+    assert len(candidate_pool.get_pooled(db_session, thread.id)) == 2
 
 
 def test_condense_caps_pool(db_session, thread):

@@ -103,6 +103,9 @@ deliberately spread across these moves: {moves}.
 - go_deeper: follow up on the last answer while it is warm.
 - pivot_to_gap: jump to an uncovered time/topic area from coverage_gaps.
 - bridge: connect something the user just said to adjacent uncovered territory.
+  Ground the bridge ONLY in details the user actually mentioned (quote or closely
+  paraphrase their words) — never invent people, places, sounds, or events they
+  did not describe.
 - freeform_reflection: an open-ended writing prompt (short_answer, no options).
 
 Constraints:
