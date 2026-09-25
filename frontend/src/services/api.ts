@@ -90,7 +90,7 @@ export const entriesApi = {
     const response = await api.get(`/entries/${id}`);
     return response.data;
   },
-  updateSeal: async (id: string, data: any): Promise<LifeEntry> => {
+  updateSeal: async (id: string, data: Record<string, unknown>): Promise<LifeEntry> => {
     const response = await api.patch(`/entries/${id}/seal`, data);
     return response.data;
   },

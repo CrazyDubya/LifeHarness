@@ -61,7 +61,7 @@ def capture_exception(error: Exception, extra_context: dict = None):
         extra_context: Additional context to attach to the error
     """
     if extra_context:
-        with sentry_sdk.push_scope() as scope:
+        with sentry_sdk.isolation_scope() as scope:
             for key, value in extra_context.items():
                 scope.set_extra(key, value)
             sentry_sdk.capture_exception(error)

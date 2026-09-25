@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { entriesApi } from '../services/api';
 import type { LifeEntry } from '../types';
@@ -8,11 +8,7 @@ export default function Entries() {
   const [selectedEntry, setSelectedEntry] = useState<LifeEntry | null>(null);
   const [filter, setFilter] = useState({ time_bucket: '', topic_bucket: '' });
 
-  useEffect(() => {
-    loadEntries();
-  }, []);
-
-  const loadEntries = async () => {
+  const loadEntries = useCallback(async () => {
     try {
       const data = await entriesApi.list(
         filter.time_bucket || filter.topic_bucket ? filter : undefined
@@ -21,9 +17,13 @@ export default function Entries() {
     } catch (err) {
       console.error('Failed to load entries:', err);
     }
-  };
+  }, [filter]);
 
-  const updateSeal = async (entryId: string, updates: any) => {
+  useEffect(() => {
+    loadEntries();
+  }, [loadEntries]);
+
+  const updateSeal = async (entryId: string, updates: Record<string, unknown>) => {
     try {
       await entriesApi.updateSeal(entryId, updates);
       await loadEntries();
