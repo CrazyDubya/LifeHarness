@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { isAxiosError } from 'axios';
 import { useAuth } from '../hooks/useAuth';
 
 export default function Login() {
@@ -22,8 +23,11 @@ export default function Login() {
         await login(email, password);
         navigate('/dashboard');
       }
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Authentication failed');
+    } catch (err: unknown) {
+      const detail = isAxiosError(err)
+        ? (err.response?.data as { detail?: string } | undefined)?.detail
+        : undefined;
+      setError(detail || 'Authentication failed');
     }
   };
 

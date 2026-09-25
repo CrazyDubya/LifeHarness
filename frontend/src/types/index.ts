@@ -98,7 +98,13 @@ export interface AutobiographyRequest {
   tone: 'light' | 'balanced' | 'deep';
 }
 
+export interface AutobiographyChapter {
+  chapter: number;
+  title: string;
+  sections?: string[];
+}
+
 export interface Autobiography {
-  outline: any;
+  outline: AutobiographyChapter[];
   markdown: string;
 }

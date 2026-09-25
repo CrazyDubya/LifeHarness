@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { threadsApi } from '../services/api';
 import type { Thread, Question, Answer } from '../types';
@@ -12,13 +12,38 @@ export default function ThreadView() {
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
 
-  useEffect(() => {
-    if (threadId) {
-      loadThread();
-    }
-  }, [threadId]);
+  const nextStep = useCallback(
+    async (lastAnswer?: Answer) => {
+      if (!threadId) return;
 
-  const loadThread = async () => {
+      setLoading(true);
+      try {
+        const response = await threadsApi.step(threadId, {
+          last_answer: lastAnswer,
+          control: 'continue',
+        });
+
+        if (response.done) {
+          setDone(true);
+          setCurrentQuestion(null);
+        } else if (response.question) {
+          setCurrentQuestion(response.question);
+          setAnswer({
+            question_id: response.question.id,
+            choice_id: '',
+            free_text: '',
+          });
+        }
+      } catch (err) {
+        console.error('Failed to get next question:', err);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [threadId]
+  );
+
+  const loadThread = useCallback(async () => {
     if (!threadId) return;
 
     try {
@@ -30,35 +55,13 @@ export default function ThreadView() {
     } catch (err) {
       console.error('Failed to load thread:', err);
     }
-  };
+  }, [threadId, nextStep]);
 
-  const nextStep = async (lastAnswer?: Answer) => {
-    if (!threadId) return;
-
-    setLoading(true);
-    try {
-      const response = await threadsApi.step(threadId, {
-        last_answer: lastAnswer,
-        control: 'continue',
-      });
-
-      if (response.done) {
-        setDone(true);
-        setCurrentQuestion(null);
-      } else if (response.question) {
-        setCurrentQuestion(response.question);
-        setAnswer({
-          question_id: response.question.id,
-          choice_id: '',
-          free_text: '',
-        });
-      }
-    } catch (err) {
-      console.error('Failed to get next question:', err);
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    if (threadId) {
+      loadThread();
     }
-  };
+  }, [threadId, loadThread]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

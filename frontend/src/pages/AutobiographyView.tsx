@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { autobiographyApi } from '../services/api';
-import type { Autobiography } from '../types';
+import type { Autobiography, AutobiographyChapter } from '../types';
 
 export default function AutobiographyView() {
   const [autobiography, setAutobiography] = useState<Autobiography | null>(null);
@@ -79,7 +79,7 @@ export default function AutobiographyView() {
             <select
               value={config.audience}
               onChange={(e) =>
-                setConfig({ ...config, audience: e.target.value as any })
+                setConfig({ ...config, audience: e.target.value as 'self' | 'trusted' | 'heirs' | 'public' })
               }
             >
               <option value="self">Self Only</option>
@@ -91,7 +91,7 @@ export default function AutobiographyView() {
             <label>Tone</label>
             <select
               value={config.tone}
-              onChange={(e) => setConfig({ ...config, tone: e.target.value as any })}
+              onChange={(e) => setConfig({ ...config, tone: e.target.value as 'light' | 'balanced' | 'deep' })}
             >
               <option value="light">Light</option>
               <option value="balanced">Balanced</option>
@@ -174,7 +174,7 @@ export default function AutobiographyView() {
                 >
                   <h2>Outline</h2>
                   {Array.isArray(autobiography.outline) &&
-                    autobiography.outline.map((chapter: any, idx: number) => (
+                    autobiography.outline.map((chapter: AutobiographyChapter, idx: number) => (
                       <div key={idx} style={{ marginBottom: '12px' }}>
                         <strong>
                           Chapter {chapter.chapter}: {chapter.title}

@@ -19,7 +19,7 @@ export default function Onboarding() {
     life_snapshot: '',
   });
 
-  const updateField = (field: string, value: any) => {
+  const updateField = (field: string, value: string | boolean | number) => {
     setFormData({ ...formData, [field]: value });
   };
 
@@ -141,7 +141,7 @@ export default function Onboarding() {
             <label>Intensity</label>
             <select
               value={formData.intensity}
-              onChange={(e) => updateField('intensity', e.target.value as any)}
+              onChange={(e) => updateField('intensity', e.target.value as 'light' | 'balanced' | 'deep')}
             >
               <option value="light">Light - Casual questions</option>
               <option value="balanced">Balanced - Mix of depth and ease</option>
