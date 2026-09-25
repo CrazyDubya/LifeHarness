@@ -53,6 +53,18 @@ class StepIn(BaseModel):
     control: Literal["continue", "stop"] = "continue"
 
 
+class SeriesSuggestion(BaseModel):
+    suggest_new_series: bool
+    reason: str
+    health: Dict[str, Any]
+    next_series: Optional[Dict[str, Any]] = None
+
+
 class StepOut(BaseModel):
     done: bool
     question: Optional[QuestionPayload] = None
+    # Branching metadata: which move Jev (or the fallback) picked
+    move: Optional[str] = None
+    jev_confidence: Optional[float] = None
+    decision_source: Optional[str] = None  # jev | deterministic_fallback | fallback_no_candidates
+    series_suggestion: Optional[SeriesSuggestion] = None

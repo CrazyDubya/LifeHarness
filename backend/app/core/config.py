@@ -12,10 +12,21 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080  # 7 days
 
-    # Vultr API
-    VULTR_API_KEY: str = ""
-    VULTR_API_BASE_URL: str = "https://api.vultrinference.com/v1"
-    VULTR_MODEL: str = "llama2-13b-chat-Q5_K_M"
+    # Token Broker (OpenAI-compatible cheap inference) — question generation
+    TOKENBROKER_API_KEY: str = ""
+    TOKENBROKER_API_BASE_URL: str = "https://api.thetokenbroker.ai/v1"
+    TOKENBROKER_MODEL: str = "gemini-3.8-flash"
+
+    # TypeSafe Jev (decision model) — candidate ranking
+    TYPESAFE_API_KEY: str = ""
+    TYPESAFE_API_BASE_URL: str = "https://api.typesafe.ai"
+    JEV_MODEL: str = "jev-latest"
+    JEV_CONFIDENCE_THRESHOLD: float = 0.55
+
+    # Candidate pool
+    CANDIDATE_POOL_CAP: int = 25
+    CANDIDATES_PER_TOPUP: int = 4
+    CANDIDATE_POOL_MIN: int = 5
 
     # CORS - stored as string in .env, converted to list
     CORS_ORIGINS: Union[str, List[str]] = "http://localhost:5173,http://localhost:3000"

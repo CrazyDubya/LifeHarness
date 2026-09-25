@@ -10,11 +10,7 @@ from app.models.thread import Thread
 from app.models.question import Question, Answer
 from app.schemas.thread import ThreadCreate, ThreadOut
 from app.schemas.question import StepIn, StepOut, QuestionPayload, AnswerOut
-from app.services.question_engine import (
-    should_inject_freeform,
-    create_freeform_question,
-    generate_next_question
-)
+from app.services.question_engine import generate_next_question
 from app.services.agent_personalities import DEFAULT_PERSONA_KEY
 from app.services.life_entry_service import create_life_entry_from_freeform
 
@@ -142,23 +138,10 @@ async def thread_step(
 
         db.commit()
 
-    # Decide next question type
-    if should_inject_freeform(thread):
-        # Inject freeform
-        question = create_freeform_question(db, thread, thread.questions_asked)
-        thread.questions_since_last_freeform = 0
-        db.commit()
-    else:
-        # Generate regular question
-        question = await generate_next_question(db, thread, profile)
+    # Branch: candidate pool + Jev ranking (falls back gracefully)
+    question, info = await generate_next_question(db, thread, profile)
 
-        if not question:
-            # Fallback if LLM fails
-            question = create_freeform_question(db, thread, thread.questions_asked)
-            thread.questions_since_last_freeform = 0
-            db.commit()
-
-    # Return next question
+    # Return next question with branching metadata
     return StepOut(
         done=False,
         question=QuestionPayload(
@@ -166,7 +149,11 @@ async def thread_step(
             type=question.type,
             text=question.text,
             options=question.options
-        )
+        ),
+        move=info.get("move"),
+        jev_confidence=info.get("jev_confidence"),
+        decision_source=info.get("decision_source"),
+        series_suggestion=info.get("series_suggestion"),
     )
 
 

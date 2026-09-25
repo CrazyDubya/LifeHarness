@@ -1,9 +1,45 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey, Text, Float
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 from app.core.db_types import UUIDType, ArrayType, JSONBType
+
+
+class QuestionCandidate(Base):
+    """A generated-but-not-yet-presented question.
+
+    The LLM generates candidates in batches (spread across moves); Jev ranks
+    the pooled candidates each step and the winner is materialized into a
+    real Question. Losers stay pooled for future steps; the pool is condensed
+    when it grows past CANDIDATE_POOL_CAP.
+    """
+
+    __tablename__ = "question_candidates"
+
+    id = Column(UUIDType(), primary_key=True, default=uuid.uuid4)
+    thread_id = Column(UUIDType(), ForeignKey("threads.id", ondelete="CASCADE"), nullable=False)
+    text = Column(Text, nullable=False)
+    type = Column(String, nullable=False, default="multiple_choice")
+
+    options = Column(JSONBType(), nullable=True)
+    time_focus = Column(ArrayType(String), nullable=True, default=list)
+    topic_focus = Column(ArrayType(String), nullable=True, default=list)
+
+    # Generation move: go_deeper | pivot_to_gap | bridge | freeform_reflection
+    move = Column(String, nullable=False, default="pivot_to_gap")
+
+    # Lifecycle: pooled -> presented | archived
+    status = Column(String, nullable=False, default="pooled")
+
+    # Last Jev probability assigned to this candidate (used for condense order)
+    jev_probability = Column(Float, nullable=True)
+
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    presented_at = Column(DateTime, nullable=True)
+
+    # Relationships
+    thread = relationship("Thread", back_populates="candidates")
 
 
 class Question(Base):
