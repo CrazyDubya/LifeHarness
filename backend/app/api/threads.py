@@ -1,7 +1,7 @@
 from typing import List
 from uuid import UUID
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -11,6 +11,7 @@ from app.models.question import Question, Answer
 from app.schemas.thread import ThreadCreate, ThreadOut
 from app.schemas.question import StepIn, StepOut, QuestionPayload, AnswerOut
 from app.services.question_engine import generate_next_question
+from app.services.candidate_pool import warm_pool_for_thread
 from app.services.agent_personalities import DEFAULT_PERSONA_KEY
 from app.services.life_entry_service import create_life_entry_from_freeform
 
@@ -20,6 +21,7 @@ router = APIRouter()
 @router.post("", response_model=ThreadOut)
 def create_thread(
     thread_data: ThreadCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
@@ -36,6 +38,10 @@ def create_thread(
     db.add(thread)
     db.commit()
     db.refresh(thread)
+
+    # Pre-warm the candidate pool in the background so step 1 doesn't pay
+    # the full generation cost. Failures are swallowed (step 1 tops up anyway).
+    background_tasks.add_task(warm_pool_for_thread, thread.id, user.id)
 
     return thread
 

@@ -6,8 +6,10 @@ a real Question. The pool is condensed when it grows past CANDIDATE_POOL_CAP
 (default 25): near-duplicates merge, then lowest-probability leftovers archive.
 """
 from datetime import datetime
+import asyncio
 import re
 from typing import Dict, Any, List, Optional
+from uuid import UUID
 from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models.thread import Thread
@@ -176,6 +178,44 @@ def mark_presented(db: Session, candidate: QuestionCandidate) -> None:
     candidate.status = "presented"
     candidate.presented_at = datetime.utcnow()
     db.commit()
+
+
+def warm_pool_for_thread(thread_id: UUID, user_id: UUID) -> int:
+    """Background pre-warm: fill a brand-new thread's pool so step 1 is fast.
+
+    Runs after thread creation with its own DB session (never the request's).
+    Skips if the pool already has candidates (step 1 beat it there). Never
+    raises — a failed warm just means step 1 tops up synchronously as before.
+    Returns the number of candidates stored.
+    """
+    # Deferred: question_engine imports this module at load time.
+    from app.core.database import SessionLocal
+    from app.services.question_engine import build_step_context
+
+    db = SessionLocal()
+    try:
+        thread = (
+            db.query(Thread)
+            .filter(Thread.id == thread_id, Thread.user_id == user_id)
+            .first()
+        )
+        if not thread:
+            return 0
+        if get_pooled(db, thread.id):
+            return 0
+        profile = (
+            db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+        )
+        if not profile:
+            return 0
+        context = build_step_context(db, thread, profile)
+        stored = asyncio.run(top_up_pool(db, thread, profile, context))
+        return len(stored)
+    except Exception as e:
+        print(f"Pool pre-warm failed for thread {thread_id}: {e}")
+        return 0
+    finally:
+        db.close()
 
 
 def record_probabilities(

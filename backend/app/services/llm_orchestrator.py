@@ -1,3 +1,4 @@
+import asyncio
 import json
 from typing import Dict, Any, List, Optional
 import httpx
@@ -158,7 +159,20 @@ For short_answer candidates, omit the "options" field."""
             {"role": "user", "content": user_content},
         ]
 
-        response = await self._call_api(messages, temperature=0.8, max_tokens=1800)
+        # Hard timeout: Token Broker's cheapest-offer routing occasionally
+        # stalls for over a minute. On timeout return [] so the caller falls
+        # back to ranking the existing pool (or prompt-bank freeform).
+        try:
+            response = await asyncio.wait_for(
+                self._call_api(messages, temperature=0.8, max_tokens=1800),
+                timeout=settings.CANDIDATE_GEN_TIMEOUT_S,
+            )
+        except asyncio.TimeoutError:
+            print(
+                "Candidate generation timed out after "
+                f"{settings.CANDIDATE_GEN_TIMEOUT_S}s; using pooled candidates."
+            )
+            return []
         if not response:
             return []
         data = self._extract_json(response)

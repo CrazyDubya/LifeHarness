@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     CANDIDATES_PER_TOPUP: int = 4
     CANDIDATE_POOL_MIN: int = 5
 
+    # Latency guards: bound the worst case, never the typical case.
+    CANDIDATE_GEN_TIMEOUT_S: float = 12.0
+
     # CORS - stored as string in .env, converted to list
     CORS_ORIGINS: Union[str, List[str]] = "http://localhost:5173,http://localhost:3000"
 
