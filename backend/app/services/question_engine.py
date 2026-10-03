@@ -1,24 +1,30 @@
-import random
-from typing import Dict, Any, List, Optional
+"""Question engine: candidate pool + Jev ranking + health matrix.
+
+Each step:
+  1. Build context (recent Q&A, coverage gaps, fatigue, cadence).
+  2. Ensure the per-thread candidate pool is stocked (LLM top-up, condense at cap).
+  3. Jev ranks the pooled candidates; the winner is materialized into a Question.
+  4. The thread-health matrix may suggest (never force) starting a new series.
+
+The old random freeform injection is gone: freeform cadence is a signal Jev
+sees and the deterministic fallback enforces.
+"""
 from datetime import datetime
+from typing import Dict, Any, List, Optional, Tuple
 from sqlalchemy.orm import Session
 from app.models.thread import Thread, ThreadFreeform
-from app.models.question import Question, Answer
+from app.models.question import Question, Answer, QuestionCandidate
 from app.models.life_entry import LifeEntry
 from app.models.user import UserProfile
-from app.services.llm_orchestrator import llm_orchestrator
 from app.services.coverage_service import get_coverage_slice
 from app.services.agent_personalities import get_persona, DEFAULT_PERSONA_KEY
-
-
-def should_inject_freeform(thread: Thread) -> bool:
-    """Determine if we should inject a freeform prompt"""
-    n = thread.questions_since_last_freeform
-    if n < 5:
-        return False
-    # Random threshold between 5-10
-    threshold = random.randint(5, 10)
-    return n >= threshold
+from app.services.candidate_pool import (
+    ensure_pool,
+    mark_presented,
+    record_probabilities,
+)
+from app.services.jev_decider import rank_candidates, FREEFORM_MOVES
+from app.services import thread_health
 
 
 def get_allowed_buckets(profile: UserProfile, thread: Thread) -> tuple[List[str], List[str]]:
@@ -139,12 +145,94 @@ def build_context_digest(
     return digest
 
 
+def get_recent_qa(db: Session, thread: Thread, limit: int = 5) -> List[Dict[str, str]]:
+    recent_questions = db.query(Question).filter(
+        Question.thread_id == thread.id
+    ).order_by(Question.index_in_thread.desc()).limit(limit).all()
+
+    recent_qa = []
+    for q in reversed(recent_questions):
+        answer = db.query(Answer).filter(Answer.question_id == q.id).first()
+        if answer:
+            answer_text = answer.free_text or f"Choice: {answer.choice_id}"
+            recent_qa.append({"q": q.text, "a": answer_text})
+    return recent_qa
+
+
+def get_coverage_gaps(
+    coverage_slice: Dict[str, Dict[str, int]]
+) -> List[Dict[str, Any]]:
+    """Flatten the coverage slice into gaps sorted emptiest-first."""
+    gaps = [
+        {"time_bucket": t, "topic_bucket": topic, "score": score}
+        for t, topics in coverage_slice.items()
+        for topic, score in topics.items()
+    ]
+    gaps.sort(key=lambda g: g["score"])
+    return gaps
+
+
+def get_recent_moves(db: Session, thread: Thread, limit: int = 5) -> List[str]:
+    presented = (
+        db.query(QuestionCandidate)
+        .filter(
+            QuestionCandidate.thread_id == thread.id,
+            QuestionCandidate.status == "presented",
+        )
+        .order_by(QuestionCandidate.presented_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return [c.move for c in reversed(presented)]
+
+
+def build_profile_summary(profile: UserProfile) -> Dict[str, Any]:
+    current_year = datetime.now().year
+    user_age = current_year - profile.year_of_birth if profile.year_of_birth else None
+    return {
+        "age": user_age,
+        "has_children": profile.has_children or False,
+        "avoid_topics": profile.avoid_topics or [],
+        "intensity": profile.intensity or "balanced",
+    }
+
+
+def build_step_context(
+    db: Session, thread: Thread, profile: UserProfile
+) -> Dict[str, Any]:
+    """Assemble everything the pool, Jev, and health matrix need."""
+    allowed_time, allowed_topics = get_allowed_buckets(profile, thread)
+    coverage_slice = get_coverage_slice(db, profile.user_id, allowed_time, allowed_topics)
+    coverage_gaps = get_coverage_gaps(coverage_slice)
+    recent_qa = get_recent_qa(db, thread)
+    health = thread_health.compute_health(db, thread)
+    fatigue = {
+        "avg_answer_len": health["avg_answer_len"],
+        "answer_len_trend": health["answer_len_trend"],
+        "skips": health["skips"],
+    }
+    profile_summary = build_profile_summary(profile)
+
+    return {
+        "thread_root": f"{thread.title}: {thread.root_prompt}",
+        "profile_summary": profile_summary,
+        "recent_qa": recent_qa,
+        "coverage_gaps": coverage_gaps,
+        "coverage_slice": coverage_slice,
+        "allowed_time_buckets": allowed_time,
+        "allowed_topic_buckets": allowed_topics,
+        "fatigue": fatigue,
+        "recent_moves": get_recent_moves(db, thread),
+        "health": health,
+    }
+
+
 def create_freeform_question(
     db: Session,
     thread: Thread,
     index: int
 ) -> Question:
-    """Create a freeform reflection question"""
+    """Last-resort fallback: a freeform prompt when generation fails."""
     freeform_prompts = [
         "Take a moment to write about a memory that stands out from this period of your life.",
         "Describe a turning point or significant moment you haven't mentioned yet.",
@@ -156,6 +244,7 @@ def create_freeform_question(
         "What brought you joy during this period?",
     ]
 
+    import random
     text = random.choice(freeform_prompts)
 
     question = Question(
@@ -175,88 +264,74 @@ def create_freeform_question(
     return question
 
 
-async def generate_next_question(
-    db: Session,
-    thread: Thread,
-    profile: UserProfile
-) -> Optional[Question]:
-    """Generate the next question for a thread using LLM"""
-
-    # Get recent Q&A
-    recent_questions = db.query(Question).filter(
-        Question.thread_id == thread.id
-    ).order_by(Question.index_in_thread.desc()).limit(5).all()
-
-    recent_qa = []
-    for q in reversed(recent_questions):
-        answer = db.query(Answer).filter(Answer.question_id == q.id).first()
-        if answer:
-            answer_text = answer.free_text or f"Choice: {answer.choice_id}"
-            recent_qa.append({"q": q.text, "a": answer_text})
-
-    # Get thread freeforms
-    freeforms = db.query(ThreadFreeform).filter(
-        ThreadFreeform.thread_id == thread.id
-    ).all()
-
-    thread_freeforms = [
-        {"index": f.index_in_thread, "text": f.text}
-        for f in freeforms
-    ]
-
-    # Get allowed buckets
-    allowed_time, allowed_topics = get_allowed_buckets(profile, thread)
-
-    # Get coverage
-    coverage_slice = get_coverage_slice(db, profile.user_id, allowed_time, allowed_topics)
-
-    # Persona metadata
-    persona = get_persona(thread.persona or DEFAULT_PERSONA_KEY)
-
-    # Build profile summary
-    current_year = datetime.now().year
-    user_age = current_year - profile.year_of_birth if profile.year_of_birth else None
-
-    profile_summary = {
-        "age": user_age,
-        "has_children": profile.has_children or False,
-        "avoid_topics": profile.avoid_topics or [],
-        "intensity": profile.intensity or "balanced"
-    }
-
-    context_digest = build_context_digest(db, thread, allowed_time, allowed_topics)
-
-    # Call LLM
-    result = await llm_orchestrator.generate_question(
-        thread_root=f"{thread.title}: {thread.root_prompt}",
-        profile_summary=profile_summary,
-        thread_freeforms=thread_freeforms,
-        recent_qa=recent_qa,
-        coverage_slice=coverage_slice,
-        context_digest=context_digest,
-        allowed_time_buckets=allowed_time,
-        allowed_topic_buckets=allowed_topics,
-        persona=persona,
-    )
-
-    if not result or "question" not in result:
-        return None
-
-    q_data = result["question"]
-
-    # Create question
+def materialize_candidate(
+    db: Session, thread: Thread, candidate: QuestionCandidate
+) -> Question:
+    """Turn the winning candidate into a real Question."""
     question = Question(
         thread_id=thread.id,
         index_in_thread=thread.questions_asked,
-        type=q_data.get("type", "multiple_choice"),
-        text=q_data["text"],
-        options=q_data.get("options"),
-        time_focus=q_data.get("time_focus", []),
-        topic_focus=q_data.get("topic_focus", []),
+        type=candidate.type,
+        text=candidate.text,
+        options=candidate.options,
+        time_focus=candidate.time_focus,
+        topic_focus=candidate.topic_focus,
     )
-
     db.add(question)
     db.commit()
     db.refresh(question)
 
+    mark_presented(db, candidate)
+
+    # Freeform cadence is tracked off presented moves now
+    if candidate.move in FREEFORM_MOVES:
+        thread.questions_since_last_freeform = 0
+        db.commit()
+
     return question
+
+
+async def generate_next_question(
+    db: Session,
+    thread: Thread,
+    profile: UserProfile
+) -> Tuple[Question, Dict[str, Any]]:
+    """Generate the next question via candidate pool + Jev ranking.
+
+    Returns (question, info) where info carries move, jev_confidence,
+    decision_source, and an optional series_suggestion.
+    """
+    ctx = build_step_context(db, thread, profile)
+
+    pooled = await ensure_pool(db, thread, profile, ctx)
+
+    info: Dict[str, Any] = {
+        "move": None,
+        "jev_confidence": 0.0,
+        "decision_source": "fallback_no_candidates",
+        "series_suggestion": None,
+    }
+
+    if not pooled:
+        question = create_freeform_question(db, thread, thread.questions_asked)
+        info["move"] = "freeform_reflection"
+    else:
+        ranked, confidence, source = await rank_candidates(
+            db, thread, profile, pooled, ctx
+        )
+        if not ranked:
+            question = create_freeform_question(db, thread, thread.questions_asked)
+            info["move"] = "freeform_reflection"
+        else:
+            record_probabilities(db, ranked)
+            winner = ranked[0][0]
+            question = materialize_candidate(db, thread, winner)
+            info["move"] = winner.move
+            info["jev_confidence"] = confidence
+            info["decision_source"] = source
+
+    info["series_suggestion"] = thread_health.series_suggestion(
+        db, thread, profile, ctx["coverage_slice"], ctx["coverage_gaps"]
+    )
+
+    return question, info

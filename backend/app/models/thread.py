@@ -27,6 +27,7 @@ class Thread(Base):
     user = relationship("User", back_populates="threads")
     freeforms = relationship("ThreadFreeform", back_populates="thread", cascade="all, delete-orphan")
     questions = relationship("Question", back_populates="thread", cascade="all, delete-orphan")
+    candidates = relationship("QuestionCandidate", back_populates="thread", cascade="all, delete-orphan")
     life_entries = relationship("LifeEntry", back_populates="thread")
 
 

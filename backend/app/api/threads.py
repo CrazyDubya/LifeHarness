@@ -1,7 +1,7 @@
 from typing import List
 from uuid import UUID
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -10,11 +10,8 @@ from app.models.thread import Thread
 from app.models.question import Question, Answer
 from app.schemas.thread import ThreadCreate, ThreadOut
 from app.schemas.question import StepIn, StepOut, QuestionPayload, AnswerOut
-from app.services.question_engine import (
-    should_inject_freeform,
-    create_freeform_question,
-    generate_next_question
-)
+from app.services.question_engine import generate_next_question
+from app.services.candidate_pool import warm_pool_for_thread
 from app.services.agent_personalities import DEFAULT_PERSONA_KEY
 from app.services.life_entry_service import create_life_entry_from_freeform
 
@@ -24,6 +21,7 @@ router = APIRouter()
 @router.post("", response_model=ThreadOut)
 def create_thread(
     thread_data: ThreadCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
@@ -40,6 +38,10 @@ def create_thread(
     db.add(thread)
     db.commit()
     db.refresh(thread)
+
+    # Pre-warm the candidate pool in the background so step 1 doesn't pay
+    # the full generation cost. Failures are swallowed (step 1 tops up anyway).
+    background_tasks.add_task(warm_pool_for_thread, thread.id, user.id)
 
     return thread
 
@@ -142,23 +144,10 @@ async def thread_step(
 
         db.commit()
 
-    # Decide next question type
-    if should_inject_freeform(thread):
-        # Inject freeform
-        question = create_freeform_question(db, thread, thread.questions_asked)
-        thread.questions_since_last_freeform = 0
-        db.commit()
-    else:
-        # Generate regular question
-        question = await generate_next_question(db, thread, profile)
+    # Branch: candidate pool + Jev ranking (falls back gracefully)
+    question, info = await generate_next_question(db, thread, profile)
 
-        if not question:
-            # Fallback if LLM fails
-            question = create_freeform_question(db, thread, thread.questions_asked)
-            thread.questions_since_last_freeform = 0
-            db.commit()
-
-    # Return next question
+    # Return next question with branching metadata
     return StepOut(
         done=False,
         question=QuestionPayload(
@@ -166,7 +155,11 @@ async def thread_step(
             type=question.type,
             text=question.text,
             options=question.options
-        )
+        ),
+        move=info.get("move"),
+        jev_confidence=info.get("jev_confidence"),
+        decision_source=info.get("decision_source"),
+        series_suggestion=info.get("series_suggestion"),
     )
 
 

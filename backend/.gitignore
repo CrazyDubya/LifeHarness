@@ -32,3 +32,6 @@ ENV/
 .DS_Store
 Thumbs.db
 logs/
+
+# Local dev virtualenv
+.venv/
