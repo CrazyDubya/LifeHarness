@@ -17,12 +17,22 @@ person whose life story is in the database.
 
 ## Where your words travel
 
-To generate questions, distill memories, and draft autobiographies, the app
-sends your entries and profile summaries to an external inference provider
-(Vultr Inference API, configurable via `VULTR_API_BASE_URL` / `VULTR_MODEL`).
-This means your life-story content leaves your server. There is currently no
-local-only mode and no opt-out short of not using those features — that is a
-product decision still open (see the punchlist).
+Your life-story content leaves your server in two places. Both are configured
+by environment variables and both are third parties:
+
+1. **Inference provider** (`VULTR_API_BASE_URL`, default Vultr Inference API)
+   — generates interview questions and question candidates, distills your
+   freeform writings into structured memories, and drafts autobiographies.
+   It receives thread content, profile summaries, freeform texts, recent
+   questions and answers, and distilled life entries.
+2. **TypeSafe Jev** (`TYPESAFE_API_BASE_URL`) — ranks candidate questions each
+   interview step. It receives a thread state summary: thread title and
+   persona, profile facts (age, children status, topics you avoid), recent
+   question/answer exchanges (truncated), candidate question texts, coverage
+   gaps, and engagement signals.
+
+There is currently no local-only mode and no opt-out short of not using those
+features — that is a product decision still open (see the punchlist).
 
 Error tracking via Sentry is optional and off unless `SENTRY_DSN` is set; it is
 configured to never send personal data (`send_default_pii=False`).
