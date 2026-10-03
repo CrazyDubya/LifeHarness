@@ -1,206 +1,136 @@
-import asyncio
 import json
+import logging
 from typing import Dict, Any, List, Optional
 import httpx
 from app.core.config import settings
 
 
-# Candidate generation moves. Jev ranks concrete candidates; these moves are
-# generation directives and stored tags, not Jev's choice set.
-MOVES = ["go_deeper", "pivot_to_gap", "bridge", "freeform_reflection"]
-
-BROWSER_UA = (
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-)
+logger = logging.getLogger(__name__)
 
 
 class LLMOrchestrator:
-    """LLM access via Token Broker (OpenAI-compatible cheap inference).
-
-    The LLM is the writer, not the strategist: it generates batches of tagged
-    candidate questions; Jev (via jev_decider) ranks the candidate pool.
-    """
-
     def __init__(self):
-        self.api_key = settings.TOKENBROKER_API_KEY
-        self.base_url = settings.TOKENBROKER_API_BASE_URL.rstrip("/")
-        self.model = settings.TOKENBROKER_MODEL
-
-    def _headers(self) -> Dict[str, str]:
-        return {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "User-Agent": BROWSER_UA,
-        }
+        self.api_key = settings.VULTR_API_KEY
+        self.base_url = settings.VULTR_API_BASE_URL
+        self.model = settings.VULTR_MODEL
 
     async def _call_api(
         self,
         messages: List[Dict[str, str]],
         temperature: float = 0.7,
-        max_tokens: int = 2000,
-        timeout: float = 20.0,
+        max_tokens: int = 2000
     ) -> Optional[str]:
-        """Call the chat-completions endpoint. Short timeout: never hang the
-        interview loop the way the old 60s provider call did."""
+        """Call Vultr Inference API (OpenAI-compatible)"""
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+
         payload = {
             "model": self.model,
             "messages": messages,
             "temperature": temperature,
-            "max_tokens": max_tokens,
+            "max_tokens": max_tokens
         }
 
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.post(
                     f"{self.base_url}/chat/completions",
-                    headers=self._headers(),
+                    headers=headers,
                     json=payload,
-                    timeout=timeout,
+                    timeout=60.0
                 )
                 response.raise_for_status()
                 result = response.json()
                 return result["choices"][0]["message"]["content"]
             except Exception as e:
-                print(f"LLM API error: {e}")
+                logger.error(f"LLM API error: {type(e).__name__}")
                 return None
 
-    @staticmethod
-    def _extract_json(response: str) -> Optional[Dict[str, Any]]:
-        try:
-            start = response.find("{")
-            end = response.rfind("}") + 1
-            if start != -1 and end > start:
-                return json.loads(response[start:end])
-        except json.JSONDecodeError:
-            print(f"Failed to parse LLM response: {response[:500]}")
-        return None
-
-    async def generate_candidates(
+    async def generate_question(
         self,
         thread_root: str,
         profile_summary: Dict[str, Any],
+        thread_freeforms: List[Dict[str, Any]],
         recent_qa: List[Dict[str, str]],
-        coverage_gaps: List[Dict[str, Any]],
+        coverage_slice: Dict[str, Dict[str, int]],
+        context_digest: Dict[str, Any],
         allowed_time_buckets: List[str],
         allowed_topic_buckets: List[str],
-        persona: Dict[str, Any],
-        count: int = 4,
-        target_focus: Optional[Dict[str, Any]] = None,
-    ) -> List[Dict[str, Any]]:
-        """Generate a batch of diverse, tagged candidate questions.
+        persona: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Generate next question for the thread"""
 
-        Candidates are spread across moves (go_deeper / pivot_to_gap / bridge /
-        freeform_reflection) and tagged in the same JSON (move, type,
-        time_focus, topic_focus) so no separate classifier pass is needed.
-        Returns a list of candidate dicts; empty list on failure.
-        """
-        moves = ", ".join(MOVES)
-        system_prompt = f"""You are an autobiographical interviewer embodying the {persona['name']} persona.
+        system_prompt = f"""You are an ongoing autobiographical interviewer embodying the {persona['name']} persona.
 Speak with this voice: {persona['voice']}.
 Use this probing style: {persona['probing_style']}.
-Favor these topic angles: {", ".join(persona.get("preferred_topic_angles") or [])}.
-Favor these time angles: {", ".join(persona.get("preferred_time_angles") or [])}.
+Favor these topic angles: {', '.join(persona.get('preferred_topic_angles', []))}.
+Favor these time angles: {', '.join(persona.get('preferred_time_angles', []))}.
 
-Your job is to propose exactly {count} candidate next questions for this interview thread,
-deliberately spread across these moves: {moves}.
-- go_deeper: follow up on the last answer while it is warm.
-- pivot_to_gap: jump to an uncovered time/topic area from coverage_gaps.
-- bridge: connect something the user just said to adjacent uncovered territory.
-  Ground the bridge ONLY in details the user actually mentioned (quote or closely
-  paraphrase their words) — never invent people, places, sounds, or events they
-  did not describe.
-- freeform_reflection: an open-ended writing prompt (short_answer, no options).
+Your job is to propose exactly one next question for this thread.
 
 Constraints:
+- Stay within this thread's theme, unless gently bridging to a closely related under-explored area.
 - Respect the user's age, life stage, and avoid list.
 - Do NOT ask about children if they have none and did not create a children-focused thread.
 - Prefer concrete, specific questions tied to periods, people, or places.
 - Default to multiple-choice with an "Other (I'll explain)" option when possible.
-- Do NOT repeat or closely paraphrase recent questions.
-- If a target_focus is provided, prioritize that time/topic slice for the next question and set the time_focus/topic_focus accordingly.
+- Focus on areas with low coverage scores to ensure comprehensive life documentation.
+- Use the provided time/topic summaries from past entries and freeforms to maintain continuity and avoid asking about already-covered specifics.
 
-Return ONLY valid JSON with this structure:
-{{
-  "candidates": [
-    {{
-      "move": "go_deeper",
-      "type": "multiple_choice",
-      "time_focus": ["20s"],
-      "topic_focus": ["friendships"],
-      "text": "Your question here",
-      "options": [
-        {{"id": "A", "text": "Option A"}},
-        {{"id": "B", "text": "Option B"}},
-        {{"id": "C", "text": "Option C"}},
-        {{"id": "OTHER", "text": "None of these fit (I'll explain)."}}
-      ]
-    }},
-    {{
-      "move": "freeform_reflection",
-      "type": "short_answer",
-      "time_focus": ["10s"],
-      "topic_focus": ["creativity_play"],
-      "text": "Your open prompt here"
-    }}
-  ]
-}}
+Additional context provided in user content:
+- context_digest.time_topic_summaries: small groups of distilled life entries keyed by time_bucket and topic with recent highlights.
+- context_digest.recent_freeforms: the latest freeform texts with inferred/assumed time/topic focus.
 
-time_focus values must come from: {allowed_time_buckets}.
-topic_focus values must come from: {allowed_topic_buckets}.
-For short_answer candidates, omit the "options" field."""
+Return your response as valid JSON with this structure:
+{
+  "question": {
+    "type": "multiple_choice" or "short_answer",
+    "time_focus": ["20s"],
+    "topic_focus": ["friendships"],
+    "text": "Your question here",
+    "options": [
+      {"id": "A", "text": "Option A"},
+      {"id": "B", "text": "Option B"},
+      {"id": "C", "text": "Option C"},
+      {"id": "D", "text": "Option D"},
+      {"id": "OTHER", "text": "None of these fit (I'll explain)."}
+    ]
+  }
+}
+
+For short_answer questions, omit the "options" field."""
 
         user_content = json.dumps({
             "thread_root": thread_root,
             "profile": profile_summary,
+            "thread_freeforms": thread_freeforms,
             "recent_qa": recent_qa,
-            "coverage_gaps": coverage_gaps,
-            "persona": persona,
-            "target_focus": target_focus,
+            "coverage_slice": coverage_slice,
+            "context_digest": context_digest,
+            "allowed_time_buckets": allowed_time_buckets,
+            "allowed_topic_buckets": allowed_topic_buckets,
+            "persona": persona
         })
 
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_content},
+            {"role": "user", "content": user_content}
         ]
 
-        # Hard timeout: Token Broker's cheapest-offer routing occasionally
-        # stalls for over a minute. On timeout return [] so the caller falls
-        # back to ranking the existing pool (or prompt-bank freeform).
-        try:
-            response = await asyncio.wait_for(
-                self._call_api(messages, temperature=0.8, max_tokens=1800),
-                timeout=settings.CANDIDATE_GEN_TIMEOUT_S,
-            )
-        except asyncio.TimeoutError:
-            print(
-                "Candidate generation timed out after "
-                f"{settings.CANDIDATE_GEN_TIMEOUT_S}s; using pooled candidates."
-            )
-            return []
-        if not response:
-            return []
-        data = self._extract_json(response)
-        if not data or "candidates" not in data:
-            return []
-
-        valid = []
-        for c in data["candidates"]:
-            if not isinstance(c, dict) or "text" not in c:
-                continue
-            if c.get("move") not in MOVES:
-                c["move"] = "pivot_to_gap"
-            if c.get("type") not in ("multiple_choice", "short_answer"):
-                c["type"] = "multiple_choice" if c.get("options") else "short_answer"
-            valid.append({
-                "move": c["move"],
-                "type": c["type"],
-                "text": c["text"],
-                "options": c.get("options"),
-                "time_focus": c.get("time_focus", []),
-                "topic_focus": c.get("topic_focus", []),
-            })
-        return valid
+        response = await self._call_api(messages, temperature=0.8, max_tokens=1000)
+        if response:
+            try:
+                # Try to extract JSON from response
+                start = response.find('{')
+                end = response.rfind('}') + 1
+                if start != -1 and end > start:
+                    json_str = response[start:end]
+                    return json.loads(json_str)
+            except json.JSONDecodeError:
+                logger.warning("Failed to parse LLM question response (content omitted from logs)")
+        return None
 
     async def distill_freeform(
         self,
@@ -239,7 +169,14 @@ work_career, money_status, health_body, creativity_play, beliefs_values, crises_
 
         response = await self._call_api(messages, temperature=0.5, max_tokens=800)
         if response:
-            return self._extract_json(response)
+            try:
+                start = response.find('{')
+                end = response.rfind('}') + 1
+                if start != -1 and end > start:
+                    json_str = response[start:end]
+                    return json.loads(json_str)
+            except json.JSONDecodeError:
+                logger.warning("Failed to parse LLM distillation response (content omitted from logs)")
         return None
 
     async def generate_autobiography(
@@ -282,10 +219,16 @@ Use markdown formatting for structure."""
             {"role": "user", "content": user_content}
         ]
 
-        response = await self._call_api(messages, temperature=0.7, max_tokens=4000,
-                                        timeout=60.0)
+        response = await self._call_api(messages, temperature=0.7, max_tokens=4000)
         if response:
-            return self._extract_json(response)
+            try:
+                start = response.find('{')
+                end = response.rfind('}') + 1
+                if start != -1 and end > start:
+                    json_str = response[start:end]
+                    return json.loads(json_str)
+            except json.JSONDecodeError:
+                logger.warning("Failed to parse LLM autobiography response (content omitted from logs)")
         return None
 
 

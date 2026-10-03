@@ -5,7 +5,7 @@ services:
     image: postgres:15-alpine
     environment:
       POSTGRES_USER: lifeharness
-      POSTGRES_PASSWORD: lifeharness_password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lifeharness_dev_password}
       POSTGRES_DB: lifeharness
     volumes:
       - postgres_data:/var/lib/postgresql/data
