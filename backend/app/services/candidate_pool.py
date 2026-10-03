@@ -130,7 +130,8 @@ async def top_up_pool(
     """Generate a fresh batch of candidates and store them.
 
     `context` carries: thread_root, profile_summary, recent_qa, coverage_gaps,
-    allowed_time_buckets, allowed_topic_buckets, persona.
+    allowed_time_buckets, allowed_topic_buckets, and target_focus. Persona
+    comes from the thread.
     Returns the stored candidates (empty list if the LLM call failed).
     """
     count = count or settings.CANDIDATES_PER_TOPUP
@@ -145,6 +146,7 @@ async def top_up_pool(
         allowed_topic_buckets=context["allowed_topic_buckets"],
         persona=persona,
         count=count,
+        target_focus=context.get("target_focus"),
     )
     if not generated:
         return []

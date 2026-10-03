@@ -86,6 +86,7 @@ class LLMOrchestrator:
         allowed_topic_buckets: List[str],
         persona: Dict[str, Any],
         count: int = 4,
+        target_focus: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         """Generate a batch of diverse, tagged candidate questions.
 
@@ -98,6 +99,8 @@ class LLMOrchestrator:
         system_prompt = f"""You are an autobiographical interviewer embodying the {persona['name']} persona.
 Speak with this voice: {persona['voice']}.
 Use this probing style: {persona['probing_style']}.
+Favor these topic angles: {", ".join(persona.get("preferred_topic_angles") or [])}.
+Favor these time angles: {", ".join(persona.get("preferred_time_angles") or [])}.
 
 Your job is to propose exactly {count} candidate next questions for this interview thread,
 deliberately spread across these moves: {moves}.
@@ -115,6 +118,7 @@ Constraints:
 - Prefer concrete, specific questions tied to periods, people, or places.
 - Default to multiple-choice with an "Other (I'll explain)" option when possible.
 - Do NOT repeat or closely paraphrase recent questions.
+- If a target_focus is provided, prioritize that time/topic slice for the next question and set the time_focus/topic_focus accordingly.
 
 Return ONLY valid JSON with this structure:
 {{
@@ -152,6 +156,7 @@ For short_answer candidates, omit the "options" field."""
             "recent_qa": recent_qa,
             "coverage_gaps": coverage_gaps,
             "persona": persona,
+            "target_focus": target_focus,
         })
 
         messages = [

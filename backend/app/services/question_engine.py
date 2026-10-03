@@ -145,10 +145,64 @@ def build_context_digest(
     return digest
 
 
+def get_recent_questions(db: Session, thread: Thread, limit: int = 5) -> List[Question]:
+    return (
+        db.query(Question)
+        .filter(Question.thread_id == thread.id)
+        .order_by(Question.index_in_thread.desc())
+        .limit(limit)
+        .all()
+    )
+
+
+def select_next_target(
+    coverage_slice: Dict[str, Dict[str, int]],
+    recent_questions: List[Question],
+) -> Optional[Dict[str, Any]]:
+    """Pick the next time/topic slice to focus on.
+
+    Prefers the lowest-scored coverage slice that hasn't been asked about in the
+    most recent questions. If all low slices were recently asked, returns the
+    lowest overall.
+    """
+    candidates: List[tuple] = []
+    for time_bucket, topics in coverage_slice.items():
+        for topic_bucket, score in topics.items():
+            candidates.append((time_bucket, topic_bucket, score))
+
+    if not candidates:
+        return None
+
+    recent_pairs = set()
+    for question in recent_questions:
+        times = question.time_focus or []
+        topics = question.topic_focus or []
+        if not times or not topics:
+            continue
+        for time_bucket in times:
+            for topic_bucket in topics:
+                recent_pairs.add((time_bucket, topic_bucket))
+
+    candidates.sort(key=lambda c: (c[2], c[0], c[1]))
+
+    for time_bucket, topic_bucket, score in candidates:
+        if (time_bucket, topic_bucket) not in recent_pairs:
+            return {
+                "time_bucket": time_bucket,
+                "topic_bucket": topic_bucket,
+                "score": score,
+            }
+
+    time_bucket, topic_bucket, score = candidates[0]
+    return {
+        "time_bucket": time_bucket,
+        "topic_bucket": topic_bucket,
+        "score": score,
+    }
+
+
 def get_recent_qa(db: Session, thread: Thread, limit: int = 5) -> List[Dict[str, str]]:
-    recent_questions = db.query(Question).filter(
-        Question.thread_id == thread.id
-    ).order_by(Question.index_in_thread.desc()).limit(limit).all()
+    recent_questions = get_recent_questions(db, thread, limit)
 
     recent_qa = []
     for q in reversed(recent_questions):
@@ -204,7 +258,9 @@ def build_step_context(
     allowed_time, allowed_topics = get_allowed_buckets(profile, thread)
     coverage_slice = get_coverage_slice(db, profile.user_id, allowed_time, allowed_topics)
     coverage_gaps = get_coverage_gaps(coverage_slice)
+    recent_questions = get_recent_questions(db, thread)
     recent_qa = get_recent_qa(db, thread)
+    target_focus = select_next_target(coverage_slice, recent_questions)
     health = thread_health.compute_health(db, thread)
     fatigue = {
         "avg_answer_len": health["avg_answer_len"],
@@ -224,6 +280,7 @@ def build_step_context(
         "fatigue": fatigue,
         "recent_moves": get_recent_moves(db, thread),
         "health": health,
+        "target_focus": target_focus,
     }
 
 
