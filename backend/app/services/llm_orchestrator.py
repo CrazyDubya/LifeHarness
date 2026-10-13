@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from typing import Dict, Any, List, Optional
 import httpx
 from app.core.config import settings
@@ -8,6 +9,9 @@ from app.core.config import settings
 # Candidate generation moves. Jev ranks concrete candidates; these moves are
 # generation directives and stored tags, not Jev's choice set.
 MOVES = ["go_deeper", "pivot_to_gap", "bridge", "freeform_reflection"]
+
+logger = logging.getLogger(__name__)
+
 
 BROWSER_UA = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -62,7 +66,7 @@ class LLMOrchestrator:
                 result = response.json()
                 return result["choices"][0]["message"]["content"]
             except Exception as e:
-                print(f"LLM API error: {e}")
+                logger.error(f"LLM API error: {type(e).__name__}")
                 return None
 
     @staticmethod
@@ -73,7 +77,7 @@ class LLMOrchestrator:
             if start != -1 and end > start:
                 return json.loads(response[start:end])
         except json.JSONDecodeError:
-            print(f"Failed to parse LLM response: {response[:500]}")
+            logger.warning("Failed to parse LLM response (content omitted from logs)")
         return None
 
     async def generate_candidates(
@@ -173,7 +177,7 @@ For short_answer candidates, omit the "options" field."""
                 timeout=settings.CANDIDATE_GEN_TIMEOUT_S,
             )
         except asyncio.TimeoutError:
-            print(
+            logger.warning(
                 "Candidate generation timed out after "
                 f"{settings.CANDIDATE_GEN_TIMEOUT_S}s; using pooled candidates."
             )

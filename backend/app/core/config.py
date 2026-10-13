@@ -3,12 +3,15 @@ from pydantic import model_validator
 from typing import List, Union, Any, Optional
 
 
+DEV_SECRET_KEY = "dev-secret-key-change-in-production"
+
+
 class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "sqlite:///./lifeharness.db"
 
     # JWT
-    SECRET_KEY: str = "dev-secret-key-change-in-production"
+    SECRET_KEY: str = DEV_SECRET_KEY
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080  # 7 days
 
@@ -48,6 +51,18 @@ class Settings(BaseSettings):
             if isinstance(cors, str):
                 values['CORS_ORIGINS'] = [origin.strip() for origin in cors.split(',')]
         return values
+
+    @model_validator(mode='after')
+    def refuse_dev_secret_in_production(self):
+        if (
+            self.ENVIRONMENT == "production"
+            and self.SECRET_KEY == DEV_SECRET_KEY
+        ):
+            raise ValueError(
+                "Refusing to start in production with the default dev SECRET_KEY. "
+                "Set a unique SECRET_KEY in the environment."
+            )
+        return self
 
     class Config:
         env_file = ".env"
