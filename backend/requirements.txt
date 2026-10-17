@@ -19,3 +19,4 @@ pytest-cov==7.1.0
 
 # Monitoring & Error Tracking
 sentry-sdk[fastapi]==2.70.0
+psycopg[binary]
