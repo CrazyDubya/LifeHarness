@@ -22,7 +22,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     environment:
-      DATABASE_URL: postgresql://lifeharness:lifeharness_password@postgres:5432/lifeharness
+      DATABASE_URL: postgresql://lifeharness:${POSTGRES_PASSWORD:-lifeharness_dev_password}@postgres:5432/lifeharness
       SECRET_KEY: ${SECRET_KEY:-change-this-in-production}
       VULTR_API_KEY: ${VULTR_API_KEY}
       VULTR_API_BASE_URL: ${VULTR_API_BASE_URL:-https://api.vultrinference.com/v1}
