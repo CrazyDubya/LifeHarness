@@ -94,8 +94,8 @@ def is_visible(
     entry_vis_level = visibility_hierarchy.get(entry.visibility, 0)
     audience_level = visibility_hierarchy.get(audience, 3)
 
-    # Entry must be at or above audience level
-    if entry_vis_level > audience_level:
+    # Broader entries are visible to narrower audiences, never the reverse.
+    if entry_vis_level < audience_level:
         return False
 
     # Check seal
