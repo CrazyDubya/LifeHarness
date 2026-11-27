@@ -109,7 +109,11 @@ async def thread_step(
         answer_data = step_data.last_answer
 
         # Get question
-        question = db.query(Question).filter(Question.id == answer_data.question_id).first()
+        # The question must belong to this (already ownership-checked) thread.
+        question = db.query(Question).filter(
+            Question.id == answer_data.question_id,
+            Question.thread_id == thread.id
+        ).first()
         if not question:
             raise HTTPException(status_code=404, detail="Question not found")
 
